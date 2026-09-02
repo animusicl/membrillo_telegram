@@ -225,8 +225,8 @@ def main() -> None:
     # Store bot client for use in handlers
     bot_client = application.bot
 
-    # Start polling
-    application.run_polling(drop_pending_updates=True, interval=1.0, timeout=30)
+    # Start polling (sin interval parameter - caused error)
+    application.run_polling(drop_pending_updates=True, timeout=30)
 
     logger.info("Membrillo Telegram bot started polling")
 
