@@ -28,6 +28,17 @@ from llm import (
 memory = GlobalMemory()
 bot_client = None
 
+# ─── Saludos variados ───
+VARIED_SALUTATIONS = [
+    "👋 ¡Hola! ¿Cómo vas?",
+    "👋 Hey! Make time to chat, how are you?",
+    "👋 ¡Qué tal! Hace rato no nos vemos por acá",
+    "👋 Holaa! Extrañaba esta charla contigo",
+    "👋 ¡Holaa! ¿Qué novedad?",
+    "👋 Hello there! How's your day going?",
+    "👋 ¡Oye! ¿Qué tal te va?",
+]
+
 # Enable logging
 logging.basicConfig(
     level=logging.INFO,
