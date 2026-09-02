@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - OpenRouter Client + Intent Parser + Response Generator + /remember command."""
+"""membrillo-telegram - OpenRouter Client + Intent Parser + Response Generator."""
 
 import aiohttp
 import json
@@ -147,8 +147,14 @@ async def generate_response(system_prompt: str, user_message: str,
         result = await http_post(url, json_data, headers=headers)
         if result.get("error", {}).get("code") == "RATE_LIMIT":
             raise RuntimeError("RATE_LIMIT")
+        # Extraer respuesta de forma segura
         if result.get("choices") and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"].strip()
+            choice = result["choices"][0]
+            if choice.get("message") and choice["message"].get("content"):
+                content = choice["message"]["content"]
+                if content:
+                    return content.strip()
+            return "❌ Error: Respuesta vacía del modelo."
         else:
             return "❌ Error: Sin respuesta del modelo."
     except RuntimeError as e:
@@ -208,9 +214,10 @@ def build_system_prompt(intent: dict, memory: Any) -> str:
 - Si el usuario pregunta por maridaje/comida: busca en internet y conecta con su lista
 - Usa markdown para formato (negrita, enlaces [texto](url))
 - **Para preguntas sobre recuerdos guardados:** Si el usuario pregunta por información guardada con /remember, busca en las notas del usuario y priorízala en tu respuesta
-- Si no tienes información guardada, dilo con humildad y ofrece buscar en internet
+- Si no sabes algo, dilo con humildad
+- Si el usuario pregunta por maridaje/comida: busca en internet y conecta con su lista
+- Usa markdown para formato (negrita, enlaces [texto](url))
 """
-
 
 def parse_intent(message: str, memory: Any) -> dict:
     """Parsea el mensaje del usuario para detectar intencionalidad y entidades."""
@@ -261,7 +268,6 @@ def parse_intent(message: str, memory: Any) -> dict:
     elif re.search(r"remember\s+guardar|guardo|anoto|guardo que", msg_low):
         intent["action"] = "add_note"
         # Extraer la clave y el contenido
-        # Patrones: "remember guardar que X", "guardo que X", "anoto X en Y"
         for pattern in [r"remember\s+guardar\s+que\s+(.+)", r"guardo?\s+que\s+(.+)", r"anoto?\s+(?:en\s+)?(\w+)?\s+(.+)", r"anotame?\s+(?:en\s+)?(\w+)?\s+(.+)"]:
             match = re.search(pattern, msg_low, re.IGNORECASE)
             if match:
