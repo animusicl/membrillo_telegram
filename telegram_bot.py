@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - Bot simple y natural con memoria."""
+"""membrillo-telegram - Bot argentino sencillo con memoria."""
 
 import logging
 import os
@@ -34,45 +34,46 @@ BOT_NAMES = ["membrillo", "membri"]  # Nombres que activa al bot (sin @)
 # ─── Logging ───
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelness)s - %(message)s"
 )
 logger = logging.getLogger("membrillo")
 
 
-# ─── Saludos ───
+# ─── Saludos estilo argentino ───
 def get_saludo():
     return random.choice([
-        "¡Hola! ¿Cómo vas?",
-        "Hey! ¿Qué tal?",
-        "¡Qué tal! Hace rato no hablamos.",
-        "Holaa! ¿Qué novedad?",
-        "¡Oye! ¿Qué te pasa?",
+        "¡Hola! ¿Cómo andás?",
+        "¡Eh! ¿Qué tal?",
+        "¡Qué tal! Hace rato no nos vemos.",
+        "¡Holaaaa! ¿Qué nueva?",
+        "¡Oye! ¿Qué hacés?",
     ])
 
 
-# ─── Comandos en INGLÉS (intuitivos) ───
+# ─── Comandos en ESPA�OL (naturales) ───
 
 async def start_cmd(update: Update, context) -> None:
-    await update.message.reply_text(f"{get_saludo()}\n\nSoy Membrillo. Escribe algo para comenzar.")
+    await update.message.reply_text(f"{get_saludo()}\n\nSoy Membrillo. Decí algo para comenzar.")
 
 
 async def help_cmd(update: Update, context) -> None:
     await update.message.reply_text(
         "Soy Membrillo, tu agente conversacional.\n"
-        "Escribe cualquier cosa para charlar.\n\n"
-        "English commands (intuitive):\n"
-        "- `membrillo remember that X` → saves X to memory\n"
-        "- `membrillo remember about X` → recalls X\n"
-        "- `membrillo my lists` → shows your lists\n"
-        "- `membrillo my notes` → shows your notes\n"
-        "- `membrillo add X to list Y` → adds X to list Y\n\n"
-        "Español también funciona!\n\n"
-        "¡Empecemos!"
+        "Decí lo que querés y yo me acuerdo.\n\n"
+        "Comandos en español:\n"
+        "- `membrillo recuerda que X` → guardá X en memoria\n"
+        "- `membrillo qué guardás de X` → yo recuerdo X\n"
+        "- `membrillo mis listas` → mostrá tus listas\n"
+        "- `membrillo mis notas` → mostrá tus notas\n"
+        "- `membrillo agrega X a la lista de Y` → guardá en lista\n"
+        "- `/listas` → ver todo lo guardado\n"
+        "- `/reset_lista <nombre>` → borrar una lista\n\n"
+        "¡Decí algo!"
     )
 
 
 async def listas_cmd(update: Update, context) -> None:
-    """Handler /listas - Ver listas y notas."""
+    """Handler /listas."""
     lst_names = memory.list_names()
     note_names = memory.list_notes()
     lines = ["📋 **Tu memoria:**"]
@@ -102,14 +103,14 @@ async def reset_lista_cmd(update: Update, context) -> None:
     """Handler /reset_lista."""
     args = context.args
     if not args:
-        await update.message.reply_text("❌ Usage: `/reset_lista <name>`", parse_mode="Markdown")
+        await update.message.reply_text("❌ Uso: `/reset_lista <nombre>`", parse_mode="Markdown")
         return
     list_name = args[0]
     ok = memory.clear_list(list_name)
     if ok:
-        await update.message.reply_text(f"✅ List **{list_name}** deleted.")
+        await update.message.reply_text(f"✅ Lista **{list_name}** borrada.")
     else:
-        await update.message.reply_text(f"❌ List **{list_name}** not found.")
+        await update.message.reply_text(f"❌ Lista **{list_name}** no existe.")
 
 
 async def historial_cmd(update: Update, context) -> None:
@@ -120,7 +121,7 @@ async def historial_cmd(update: Update, context) -> None:
         return
     lines = ["📜 **Últimos 5 mensajes:**"]
     for msg in history:
-        role = "You" if msg["role"] == "user" else "Membrillo"
+        role = "Tú" if msg["role"] == "user" else "Membrillo"
         content = msg["content"][:80] + ("..." if len(msg["content"]) > 80 else "")
         lines.append(f"{role}: {content}")
     await update.message.reply_text("\n".join(lines))
@@ -129,7 +130,7 @@ async def historial_cmd(update: Update, context) -> None:
 # ─── Lógica principal ───
 
 async def handle_message(update: Update, context) -> None:
-    """Handler principal - Conversación natural."""
+    """Handler principal - Conversación natural argentina."""
     global bot_client
     message = update.message
     if not message or not message.text:
@@ -170,13 +171,12 @@ async def handle_message(update: Update, context) -> None:
     should_respond = bot_mentioned or (has_history and random.random() < 0.7)
 
     if not should_respond:
-        # Si no toca responder, revisar si es un patrón de memoria
+        # Revisar si tiene patrones de "guardar" o "recordar"
         lower = user_text.lower()
-        # Patrones de guardar memoria
-        if ("remember" in lower or "guarda" in lower or "anota" in lower) and len(user_text) > 10:
+        if ("recordá" in lower or "guardá" in lower or "anotá" in lower) and len(user_text) > 10:
             should_respond = True
-        # Patrones de consultar memoria
-        elif ("what" in lower or "que" in lower) and len(user_text) > 10:
+        # Patrones de consultar
+        elif ("sabés" in lower or "sabes" in lower or "querés" in lower) and len(user_text) > 10:
             should_respond = True
 
     if not should_respond:
@@ -198,7 +198,7 @@ async def handle_message(update: Update, context) -> None:
         )
     except Exception as e:
         logger.error(f"Error LLM: {e}")
-        await update.message.reply_text("❌ Tuve un error, intentalo de nuevo.")
+        await update.message.reply_text("❌ Manejé un error, intentá de nuevo.")
         memory.add_history("assistant", "Error LLM", "bot")
         return
 
@@ -220,7 +220,7 @@ def main() -> None:
     application.add_handler(CommandHandler("reset_lista", reset_lista_cmd))
     application.add_handler(CommandHandler("historial", historial_cmd))
 
-    # Message handler - conversación natural
+    # Message handler - conversación argentina
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
