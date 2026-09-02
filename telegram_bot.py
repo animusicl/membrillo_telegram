@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - Bot principal simple y fluido."""
+"""membrillo-telegram - Bot simple y natural."""
 
 import logging
 import os
@@ -14,10 +14,9 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-HERMES_MODEL = os.getenv("HERMES_MODEL", "openrouter/auto")
 
 if not TOKEN or not OPENROUTER_API_KEY:
-    raise ValueError("Faltan TELEGRAM_BOT_TOKEN o OPENROUTER_API_KEY")
+    raise ValueError("Faltan tokens")
 
 # Componentes
 from memory import GlobalMemory
@@ -29,61 +28,47 @@ from llm import (
 memory = GlobalMemory()
 bot_client = None
 
-# ─── Configuración del bot ───
-# Nombres que el usuario puede usar para mencionar al bot (sin @)
-BOT_NAMES = ["membrillo", "membri"]
+# ─── Configuración ───
+BOT_NAMES = ["membrillo", "membri"]  # Nombres que activa al bot
 
-# ─── Enable logging ───
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("membrillo-telegram")
+# ─── Logging ───
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("membrillo")
 
 
-# ─── Saludos simples ───
+# ─── Saludos ───
 def get_saludo():
-    """Retorna un saludo breve y aleatorio."""
-    saludos = [
+    return random.choice([
         "¡Hola! ¿Cómo vas?",
-        "Hey! Make time to chat, how are you?",
-        "¡Qué tal! Hace rato no nos vemos.",
-        "Holaa! Extrañaba esta charla.",
-        "¡Holaa! ¿Qué novedad?",
-        "Hello there! How's your day going?",
-        "¡Oye! ¿Qué tal te va?",
-    ]
-    return random.choice(saludos)
+        "Hey! ¿Qué tal?",
+        "¡Qué tal! Hace rato no hablamos.",
+        "Holaa! ¿Qué novedad?",
+        "¡Oye! ¿Qué te pasa?",
+    ])
 
 
 # ─── Comandos ───
 
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler /start - Saludo simple."""
-    saludo = get_saludo()
-    await update.message.reply_text(
-        f"{saludo}\n\nSoy Membrillo. Escribe algo para comenzar."
-    )
+async def start_cmd(update: Update, context) -> None:
+    await update.message.reply_text(f"{get_saludo()}\n\nSoy Membrillo. Escribe algo para comenzar.")
 
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler /help - Información breve."""
+async def help_cmd(update: Update, context) -> None:
     await update.message.reply_text(
         "Soy Membrillo, tu agente conversacional.\n"
         "Escribe cualquier cosa para charlar.\n\n"
-        "Comandos:\n"
-        "- `/remember guardar <texto>` → guarda en memoria\n"
-        "- `/remember pregunta <texto>` → bot recuerda\n"
-        "- `/remember listar` → muestra todo guardado\n"
-        "- `/remember borrar <clave>` → borra una nota\n"
-        "- Escribe `membrillo` o `membri` al inicio para activarme\n"
-        "- O simplemente charla sin mencionarme si ya hablamos antes\n\n"
+        "Para listar tus cosas, usa:\n"
+        "- `membrillo mis listas`\n"
+        "- `membri mis notas`\n\n"
+        "Para guardar algo en memoria di:\n"
+        "- `membrillo recuerda que X`\n"
+        "- `membrillo guarda X en mi memoria`\n\n"
         "¡Empecemos!"
     )
 
 
-async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler /listas."""
+async def listas_cmd(update: Update, context) -> None:
+    """Handler /listas - Ver listas y notas."""
     lst_names = memory.list_names()
     note_names = memory.list_notes()
     lines = ["📋 **Tu memoria:**"]
@@ -137,10 +122,10 @@ async def historial_cmd(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
-# ─── Manejador principal ───
+# ─── Lógica principal ───
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler principal - Conversación fluida con nombre opcional."""
+async def handle_message(update: Update, context) -> None:
+    """Handler principal - Responde de forma natural."""
     global bot_client
     message = update.message
     if not message or not message.text:
@@ -150,49 +135,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = message.from_user.id if message.from_user else "unknown"
     user_name = message.from_user.full_name if message.from_user else "unknown"
 
-    # Siempre guardar en historial (contexto conversacional)
+    # Guardar en historial
     memory.add_history("user", user_text, user_name)
 
-    # Detectar si el bot es mencionado por nombre (al inicio del mensaje)
-    # O si ya hay historial previo para conversación fluida
+    # Detectar si el bot es mencionado por nombre al INICIO del mensaje
     bot_mentioned = False
     normalized = user_text
 
-    # Verificar si el mensaje empieza con el nombre del bot (sin @)
     for bot_name in BOT_NAMES:
         if user_text.lower().startswith(bot_name):
             bot_mentioned = True
-            # Normalizar: quitar el nombre y quedarse con lo que sigue
             normalized = user_text[len(bot_name):].strip()
             break
 
-    # Si no empezó con el nombre, verificar si es por mención @
+    # Si no empezó con nombre, verificar mención @
     if not bot_mentioned:
         mention = f"@{context.bot.username}" if context.bot else ""
         if mention and mention in user_text:
             bot_mentioned = True
             normalized = user_text.replace(mention, "").strip()
 
-    # Si ni empezó con nombre ni hay mención, verificar historial previo
-    # Para permitir conversación fluida: si ya hay >3 mensajes, responder igualmente
+    # Si NO mencionó el nombre, verificar si hay historial previo
+    # Para conversación fluida: si ya hay >5 mensajes, participar igualmente
     history_len = len(memory.get_history(last_n=3))
-    
-    # Lógica: responder si:
-    # 1. Mencionó el nombre del bot, O
-    # 2. Ya hay historial previo (>3 mensajes) con cierta probabilidad
-    should_respond = bot_mentioned or (history_len >= 5)
+    has_history = history_len >= 3
+
+    # Lógica de respuesta:
+    # 1. Si mencionó el nombre -> responder siempre
+    # 2. Si ya hay historial (>3 msgs) -> responder con probabilidad
+    # 3. Caso contrario -> ignorar (para no spamear)
+    should_respond = bot_mentioned or (has_history and random.random() < 0.7)
 
     if not should_respond:
-        # Silencio activo: si es un mensaje muy corto y sin contexto, ignorar
-        if len(user_text) < 5:
-            return
-        # Para mensajes más largos, aún así responder para ser útil
-        # (esto fuerza al bot a participar en conversación normal)
+        # Si no toca responder, revisar si es un comando tipo "membrillo listar"
+        # o algo que valga la pena capturar igual
+        lower = user_text.lower()
+        if any(kw in lower for kw in ["listar", "ver mis", "mis listas", "mis notas"]):
+            should_respond = True
+        elif len(user_text) > 50:
+            # Mensajes largos valen la pena responder
+            should_respond = True
 
-    # Parsear intent con LLM
+    if not should_respond:
+        return
+
+    # Parsear intención - ahora es más natural
     intent = parse_intent(normalized, memory)
 
-    # Generar respuesta con contexto
+    # Generar respuesta
     conversation_history = memory.get_history(last_n=5)
     system_prompt = build_system_prompt(intent, memory)
 
@@ -204,17 +194,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             api_key=OPENROUTER_API_KEY,
         )
     except Exception as e:
-        logger.error(f"Error en LLM: {e}")
-        await update.message.reply_text(
-            "❌ sorry, tuve un error conectando con mi cerebro. intentalo de nuevo en un momento."
-        )
-        memory.add_history("assistant", f"Error LLM: {str(e)[:100]}", "bot")
+        logger.error(f"Error LLM: {e}")
+        await update.message.reply_text("❌ Tuve un error, intentalo de nuevo.")
+        memory.add_history("assistant", "Error LLM", "bot")
         return
 
-    # Guardar respuesta en historial
+    # Guardar y responder
     memory.add_history("assistant", response, "bot")
-
-    # Enviar respuesta
     await update.message.reply_text(response, parse_mode="Markdown")
 
 
@@ -227,22 +213,18 @@ def main() -> None:
     # Comandos
     application.add_handler(CommandHandler("start", start_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(CommandHandler("listas", list_cmd))
+    application.add_handler(CommandHandler("listas", listas_cmd))
     application.add_handler(CommandHandler("reset_lista", reset_lista_cmd))
     application.add_handler(CommandHandler("historial", historial_cmd))
 
-    # Message handler - conversación fluida con nombre opcional
+    # Message handler - conversación natural
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
-    # Store bot client for use in handlers
     bot_client = application.bot
-
-    # Start polling
     application.run_polling(drop_pending_updates=True, timeout=30)
-
-    logger.info("Membrillo Telegram bot started polling")
+    logger.info("Membrillo Telegram bot started")
 
 
 if __name__ == "__main__":
