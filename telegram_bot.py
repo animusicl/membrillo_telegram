@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - Bot simple y natural."""
+"""membrillo-telegram - Bot simple y natural con memoria."""
 
 import logging
 import os
@@ -29,10 +29,13 @@ memory = GlobalMemory()
 bot_client = None
 
 # ─── Configuración ───
-BOT_NAMES = ["membrillo", "membri"]  # Nombres que activa al bot
+BOT_NAMES = ["membrillo", "membri"]  # Nombres que activa al bot (sin @)
 
 # ─── Logging ───
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("membrillo")
 
 
@@ -47,7 +50,7 @@ def get_saludo():
     ])
 
 
-# ─── Comandos ───
+# ─── Comandos en INGLÉS (intuitivos) ───
 
 async def start_cmd(update: Update, context) -> None:
     await update.message.reply_text(f"{get_saludo()}\n\nSoy Membrillo. Escribe algo para comenzar.")
@@ -57,12 +60,13 @@ async def help_cmd(update: Update, context) -> None:
     await update.message.reply_text(
         "Soy Membrillo, tu agente conversacional.\n"
         "Escribe cualquier cosa para charlar.\n\n"
-        "Para listar tus cosas, usa:\n"
-        "- `membrillo mis listas`\n"
-        "- `membri mis notas`\n\n"
-        "Para guardar algo en memoria di:\n"
-        "- `membrillo recuerda que X`\n"
-        "- `membrillo guarda X en mi memoria`\n\n"
+        "English commands (intuitive):\n"
+        "- `membrillo remember that X` → saves X to memory\n"
+        "- `membrillo remember about X` → recalls X\n"
+        "- `membrillo my lists` → shows your lists\n"
+        "- `membrillo my notes` → shows your notes\n"
+        "- `membrillo add X to list Y` → adds X to list Y\n\n"
+        "Español también funciona!\n\n"
         "¡Empecemos!"
     )
 
@@ -98,14 +102,14 @@ async def reset_lista_cmd(update: Update, context) -> None:
     """Handler /reset_lista."""
     args = context.args
     if not args:
-        await update.message.reply_text("❌ Uso: `/reset_lista <nombre>`", parse_mode="Markdown")
+        await update.message.reply_text("❌ Usage: `/reset_lista <name>`", parse_mode="Markdown")
         return
     list_name = args[0]
     ok = memory.clear_list(list_name)
     if ok:
-        await update.message.reply_text(f"✅ Lista **{list_name}** borrada.")
+        await update.message.reply_text(f"✅ List **{list_name}** deleted.")
     else:
-        await update.message.reply_text(f"❌ Lista **{list_name}** no existe.")
+        await update.message.reply_text(f"❌ List **{list_name}** not found.")
 
 
 async def historial_cmd(update: Update, context) -> None:
@@ -116,7 +120,7 @@ async def historial_cmd(update: Update, context) -> None:
         return
     lines = ["📜 **Últimos 5 mensajes:**"]
     for msg in history:
-        role = "Tú" if msg["role"] == "user" else "Membrillo"
+        role = "You" if msg["role"] == "user" else "Membrillo"
         content = msg["content"][:80] + ("..." if len(msg["content"]) > 80 else "")
         lines.append(f"{role}: {content}")
     await update.message.reply_text("\n".join(lines))
@@ -125,7 +129,7 @@ async def historial_cmd(update: Update, context) -> None:
 # ─── Lógica principal ───
 
 async def handle_message(update: Update, context) -> None:
-    """Handler principal - Responde de forma natural."""
+    """Handler principal - Conversación natural."""
     global bot_client
     message = update.message
     if not message or not message.text:
@@ -138,7 +142,7 @@ async def handle_message(update: Update, context) -> None:
     # Guardar en historial
     memory.add_history("user", user_text, user_name)
 
-    # Detectar si el bot es mencionado por nombre al INICIO del mensaje
+    # Detectar si el bot es mencionado por nombre al INICIO
     bot_mentioned = False
     normalized = user_text
 
@@ -155,31 +159,30 @@ async def handle_message(update: Update, context) -> None:
             bot_mentioned = True
             normalized = user_text.replace(mention, "").strip()
 
-    # Si NO mencionó el nombre, verificar si hay historial previo
-    # Para conversación fluida: si ya hay >5 mensajes, participar igualmente
+    # Si NO mencionó el nombre, verificar historial previo
     history_len = len(memory.get_history(last_n=3))
     has_history = history_len >= 3
 
     # Lógica de respuesta:
     # 1. Si mencionó el nombre -> responder siempre
     # 2. Si ya hay historial (>3 msgs) -> responder con probabilidad
-    # 3. Caso contrario -> ignorar (para no spamear)
+    # 3. Caso contrario -> ignorar
     should_respond = bot_mentioned or (has_history and random.random() < 0.7)
 
     if not should_respond:
-        # Si no toca responder, revisar si es un comando tipo "membrillo listar"
-        # o algo que valga la pena capturar igual
+        # Si no toca responder, revisar si es un patrón de memoria
         lower = user_text.lower()
-        if any(kw in lower for kw in ["listar", "ver mis", "mis listas", "mis notas"]):
+        # Patrones de guardar memoria
+        if ("remember" in lower or "guarda" in lower or "anota" in lower) and len(user_text) > 10:
             should_respond = True
-        elif len(user_text) > 50:
-            # Mensajes largos valen la pena responder
+        # Patrones de consultar memoria
+        elif ("what" in lower or "que" in lower) and len(user_text) > 10:
             should_respond = True
 
     if not should_respond:
         return
 
-    # Parsear intención - ahora es más natural
+    # Parsear intención
     intent = parse_intent(normalized, memory)
 
     # Generar respuesta
