@@ -3,6 +3,7 @@
 
 import logging
 import os
+import random
 from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update
@@ -28,18 +29,20 @@ from llm import (
 memory = GlobalMemory()
 bot_client = None
 
-# ─── Saludos variados ───
+# ─── Saludos variados y DIVERTIDOS ───
 VARIED_SALUTATIONS = [
-    "👋 ¡Hola! ¿Cómo vas?",
-    "👋 Hey! Make time to chat, how are you?",
-    "👋 ¡Qué tal! Hace rato no nos vemos por acá",
-    "👋 Holaa! Extrañaba esta charla contigo",
-    "👋 ¡Holaa! ¿Qué novedad?",
-    "👋 Hello there! How's your day going?",
-    "👋 ¡Oye! ¿Qué tal te va?",
+    "👋 ¡Hola! ¿Cómo vas? El bot dice que estás lindo hoy.",
+    "👋 Hey! Make time to chat, how are you? (the bot agrees)",
+    "👋 ¡Qué tal! Hace rato no nos vemos por acá, dice el bot.",
+    "👋 Holaa! Extrañaba esta charla contigo, dice el bot.",
+    "👋 ¡Holaa! ¿Qué novedad? El bot pregunta.",
+    "👋 Hello there! How's your day going? (el bot lo confirma)",
+    "👋 ¡Oye! ¿Qué tal te va? (según el bot, bien)",
+    "👋 Salom! El bot dice que es tiempo de saludar.",
+    "👋 Hola! (dice el bot: hola de vuelta).",
+    "👋 ¿Qué pasa? El bot quiere saber.",
 ]
-
-# Enable logging
+# ─── Enable logging ───
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -88,7 +91,7 @@ async def remember_cmd(update: Update, context) -> None:
             parts = msg_low.split(" en ", 1)
             note_key = parts[0].replace("mi ", "").replace("el ", "").replace("mis ", "").strip()
             note_content = parts[1].strip()
-        elif " de " in msg_low and len(parts) > 1 if " en " not in msg_low else False:
+        elif " de " in msg_low:
             parts = msg_low.split(" de ", 1)
             note_key = parts[0].strip()
             note_content = parts[1].strip()
@@ -179,8 +182,8 @@ async def remember_cmd(update: Update, context) -> None:
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler /start - Bienvenida con saludo variado."""
-    saludo = VARIED_SALUTATIONS[0]  # En producción could randomize
+    """Handler /start - Bienvenida con saludo variado y divertido."""
+    saludo = random.choice(VARIED_SALUTATIONS)  # Ahora sí es aleatorio y divertido
     await update.message.reply_text(
         f"{saludo}\n\n"
         "Soy Membrillo, tu agente conversacional. Estoy aquí para charlar, "
@@ -313,8 +316,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Ya hay conversación -> responder sin mención (fluidez)
         should_respond = True
     elif any(user_text.lower().startswith(greeting.lower().split()[0]) 
-             for greeting in VARIED_SALUTATIONS):
-        # Saludo inicial -> responder
+             for greeting in ["¡hola", "hey", "hola", "holaa"]):
+        # Saludos iniciales -> responder
         should_respond = True
     elif len(user_text) > 100:
         # Mensajes largos suelen importar -> responder
