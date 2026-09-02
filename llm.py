@@ -7,7 +7,7 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Any
 
-DEFAULT_MODEL = "nousresearch/hermes-3-llama-3.1-8b"
+DEFAULT_MODEL = "openrouter/auto"
 
 
 def build_messages(system_prompt, user_message, conversation_history):
