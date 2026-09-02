@@ -1,0 +1,16 @@
+# render.yaml
+services:
+  - type: web
+    name: membrillo-telegram
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        fromSecret: TELEGRAM_BOT_TOKEN
+      - key: OPENROUTER_API_KEY
+        fromSecret: OPENROUTER_API_KEY
+      - key: HERMES_MODEL
+        value: nousresearch/hermes-3-llama-3.1-8b
