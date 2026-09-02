@@ -34,7 +34,7 @@ BOT_NAMES = ["membrillo", "membri"]  # Nombres que activa al bot (sin @)
 # ─── Logging ───
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelness)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("membrillo")
 
@@ -50,7 +50,7 @@ def get_saludo():
     ])
 
 
-# ─── Comandos en ESPA�OL (naturales) ───
+# ─── Comandos en español argentino ───
 
 async def start_cmd(update: Update, context) -> None:
     await update.message.reply_text(f"{get_saludo()}\n\nSoy Membrillo. Decí algo para comenzar.")
@@ -130,7 +130,7 @@ async def historial_cmd(update: Update, context) -> None:
 # ─── Lógica principal ───
 
 async def handle_message(update: Update, context) -> None:
-    """Handler principal - Conversación natural argentina."""
+    """Handler principal - Conversación argentina."""
     global bot_client
     message = update.message
     if not message or not message.text:
@@ -168,15 +168,21 @@ async def handle_message(update: Update, context) -> None:
     # 1. Si mencionó el nombre -> responder siempre
     # 2. Si ya hay historial (>3 msgs) -> responder con probabilidad
     # 3. Caso contrario -> ignorar
+    # Además, revisar patrones de "guardar" y "consultar"
     should_respond = bot_mentioned or (has_history and random.random() < 0.7)
 
+    # Revisar patrones de "guardar" y "consultar" en el texto
+    lower = user_text.lower()
+    if ("guardá" in lower or "recordá" in lower) and len(user_text) > 10:
+        should_respond = True
+    elif ("sabés" in lower or "sabes" in lower or "querés" in lower) and len(user_text) > 10:
+        should_respond = True
+
     if not should_respond:
-        # Revisar si tiene patrones de "guardar" o "recordar"
-        lower = user_text.lower()
-        if ("recordá" in lower or "guardá" in lower or "anotá" in lower) and len(user_text) > 10:
-            should_respond = True
-        # Patrones de consultar
-        elif ("sabés" in lower or "sabes" in lower or "querés" in lower) and len(user_text) > 10:
+        if len(user_text) < 5:
+            return
+        # Para mensajes más largos, responder igualmente si hay contexto
+        if history_len > 0 and len(user_text) > 20:
             should_respond = True
 
     if not should_respond:
