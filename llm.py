@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - OpenRouter Client + Intent Parser + Response Generator."""
+"""membrillo-telegram - OpenRouter Client + Intent Parser + Response Generator + /remember command."""
+
 import aiohttp
 import json
 import re
@@ -7,17 +8,20 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Any
 
+# Model configuration
 DEFAULT_MODEL = "openrouter/auto"
 
 
-def build_messages(system_prompt, user_message, conversation_history):
+def build_messages(system_prompt: str, user_message: str, conversation_history: List[dict]) -> List[dict]:
+    """Construye la lista de mensajes para OpenRouter."""
     msgs = [{"role": "system", "content": system_prompt}]
     msgs.extend(conversation_history)
     msgs.append({"role": "user", "content": user_message})
     return msgs
 
 
-async def http_post(url, json_data, headers, timeout=30):
+async def http_post(url: str, json_data: dict, headers: dict, timeout: int = 30) -> dict:
+    """POST HTTP genérico con aiohttp."""
     async with aiohttp.ClientSession() as sess:
         async with sess.post(url, json=json_data, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
             if resp.status == 200:
@@ -29,6 +33,7 @@ async def http_post(url, json_data, headers, timeout=30):
                 raise RuntimeError(f"HTTP {resp.status}: {text[:200]}")
 
 
+# ─── Search Keywords ───
 SEARCH_KEYWORDS = [
     "busca", "buscar", "google", "internet", "web", "última", "actual", "hoy",
     "precio", "noticia", "link", "enlace", "url", "fuente", "recomienda",
@@ -36,7 +41,8 @@ SEARCH_KEYWORDS = [
 ]
 
 
-def needs_web_search(message):
+def needs_web_search(message: str) -> bool:
+    """Detecta si el mensaje necesita búsqueda web (keywords + intención de pregunta)."""
     msg_low = message.lower().strip()
     has_keyword = any(kw in msg_low for kw in SEARCH_KEYWORDS)
     question_patterns = [
@@ -48,7 +54,8 @@ def needs_web_search(message):
     return has_keyword or is_question
 
 
-def extract_list_reference(message, memory):
+def extract_list_reference(message: str, memory: Any) -> Optional[str]:
+    """Intenta extraer el nombre de lista referenciado en el mensaje."""
     patterns = [
         r"de.*lista.*?(\w+)",
         r"de.*mis.*?(\w+)",
@@ -66,7 +73,10 @@ def extract_list_reference(message, memory):
     return None
 
 
-async def web_search(query, max_results=5):
+# ─── Web Search (DuckDuckGo) ───
+
+async def web_search(query: str, max_results: int = 5) -> List[dict]:
+    """Busca en DuckDuckGo y devuelve [{title, url, snippet}, ...]"""
     url = "https://html.duckduckgo.com/html/"
     params = {"q": query, "kl": "es-es"}
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -77,6 +87,7 @@ async def web_search(query, max_results=5):
     except Exception as e:
         print(f"Error búsqueda web: {e}")
         return []
+
     result_blocks = re.findall(
         r'class="result__title".*?href="([^"]+)".*?>(.*?)</a>.*?class="result__snippet".*?>(.*?)</a>',
         html, re.DOTALL
@@ -98,7 +109,8 @@ async def web_search(query, max_results=5):
     return results
 
 
-def format_search_results(results):
+def format_search_results(results: List[dict]) -> str:
+    """Formatea resultados markdown."""
     if not results:
         return "Sin resultados de búsqueda."
     lines = ["🔍 **Resultados de búsqueda:**"]
@@ -110,7 +122,13 @@ def format_search_results(results):
     return "\n".join(lines)
 
 
-async def generate_response(system_prompt, user_message, conversation_history, model=DEFAULT_MODEL, api_key=""):
+# ─── LLM Response Generator ───
+
+async def generate_response(system_prompt: str, user_message: str,
+                            conversation_history: List[dict],
+                            model: str = DEFAULT_MODEL,
+                            api_key: str = "") -> str:
+    """Genera respuesta via OpenRouter API."""
     messages = build_messages(system_prompt, user_message, conversation_history)
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -142,7 +160,10 @@ async def generate_response(system_prompt, user_message, conversation_history, m
         return f"❌ Error conectando con el modelo: {str(e)[:200]}"
 
 
-def build_system_prompt(intent, memory):
+# ─── Prompt builder ───
+
+def build_system_prompt(intent: dict, memory: Any) -> str:
+    """Construye system prompt con contexto de listas y búsqueda."""
     lists_info = ""
     for list_name, items in memory._data.get("lists", {}).items():
         if items:
@@ -150,11 +171,26 @@ def build_system_prompt(intent, memory):
             items_sample = items[:3]
             names = [i.get("name", i.get("title", str(i))) for i in items_sample]
             lists_info += f"- Lista **{list_type}**: {', '.join(names)}\n"
+    
     first5 = SEARCH_KEYWORDS[:5]
+    
+    # Información de notas para el sistema
+    notes_info = ""
+    note_keys = memory.list_notes()
+    if note_keys:
+        notes_info = "\n**Tus recuerdos guardados:**\n"
+        for key in note_keys[:3]:  # Mostrar max 3 notas más recientes
+            note = memory.get_note(key)
+            if note:
+                latest = note[-1]
+                notes_info += f"- **{key}**: {latest['content']}\n"
+    
     return f"""Eres Membrillo, asistente amigable en Telegram.
 
 **Tus listas actuales:**
 {lists_info if lists_info else "- No hay listas definidas aún"}
+
+{notes_info}
 
 **Historia reciente:** {len(intent.get('history', []))} mensajes recientes
 
@@ -171,10 +207,13 @@ def build_system_prompt(intent, memory):
 - Si no sabes algo, dilo con humildad
 - Si el usuario pregunta por maridaje/comida: busca en internet y conecta con su lista
 - Usa markdown para formato (negrita, enlaces [texto](url))
+- **Para preguntas sobre recuerdos guardados:** Si el usuario pregunta por información guardada con /remember, busca en las notas del usuario y priorízala en tu respuesta
+- Si no tienes información guardada, dilo con humildad y ofrece buscar en internet
 """
 
 
-def parse_intent(message, memory):
+def parse_intent(message: str, memory: Any) -> dict:
+    """Parsea el mensaje del usuario para detectar intencionalidad y entidades."""
     msg_low = message.lower().strip()
     intent = {
         "action": "general",
@@ -182,10 +221,16 @@ def parse_intent(message, memory):
         "item_name": None,
         "needs_search": needs_web_search(msg_low),
         "search_query": None,
+        "note_key": None,
+        "note_content": None,
     }
+    
+    # Extraer nombre de lista
     list_ref = extract_list_reference(message, memory)
     if list_ref:
         intent["list_name"] = list_ref
+    
+    # Extraer nombre de ítem (después de "agrega", "añade", "pon", "add")
     item_patterns = [
         r"agrega?\s+(\w+\s*\w*)",
         r"añade\s+(\w+\s*\w*)",
@@ -198,6 +243,8 @@ def parse_intent(message, memory):
         if match:
             intent["item_name"] = match.group(1).strip()
             break
+    
+    # Detectar acción específica
     if re.search(r"borra|elimina|resetea|reset", msg_low):
         intent["action"] = "reset"
         if intent["list_name"] is None:
@@ -210,6 +257,37 @@ def parse_intent(message, memory):
         intent["action"] = "add"
     elif re.search(r"crea|nueva lista", msg_low):
         intent["action"] = "create"
+    # NUEVO: Detectar intención de guardar nota
+    elif re.search(r"remember\s+guardar|guardo|anoto|guardo que", msg_low):
+        intent["action"] = "add_note"
+        # Extraer la clave y el contenido
+        # Patrones: "remember guardar que X", "guardo que X", "anoto X en Y"
+        for pattern in [r"remember\s+guardar\s+que\s+(.+)", r"guardo?\s+que\s+(.+)", r"anoto?\s+(?:en\s+)?(\w+)?\s+(.+)", r"anotame?\s+(?:en\s+)?(\w+)?\s+(.+)"]:
+            match = re.search(pattern, msg_low, re.IGNORECASE)
+            if match:
+                key_val = match.group(1).strip() if match.group(1) else "general"
+                content_val = match.group(2).strip() if match.lastindex and match.lastindex > 0 and match.group(match.lastindex) else match.group(1).strip()
+                # Separar clave de contenido si hay dos partes
+                if " en " in key_val.lower() or " de " in key_val.lower():
+                    parts = key_val.lower().split(" en " if " en " in key_val.lower() else " de ")
+                    intent["note_key"] = parts[0].strip()
+                    intent["note_content"] = parts[1].strip() if len(parts) > 1 else content_val.strip()
+                else:
+                    # Si solo hay una parte, usarla como contenido con clave por defecto
+                    intent["note_content"] = key_val
+                break
+    
+    # NUEVO: Detectar intención de consultar nota
+    elif re.search(r"remember\s+pregunta|consulta|dime.*remember|what.*remember", msg_low):
+        intent["action"] = "show_note"
+        # Extraer qué se quiere consultar
+        for pattern in [r"remember\s+(?:sobre|de)\s+(\w+)", r"consultar\s+(\w+)", r"dime.*de\s+(\w+)"]:
+            match = re.search(pattern, msg_low, re.IGNORECASE)
+            if match:
+                intent["note_key"] = match.group(1).strip()
+                break
+    
+    # Si necesita búsqueda, extraer query
     if intent["needs_search"]:
         query = msg_low
         for kw in ["busca", "buscar", "google", "internet", "web"]:
@@ -217,4 +295,5 @@ def parse_intent(message, memory):
         for kw in ["con", "para", "ve", "maridaje", "sugiere"]:
             query = query.replace(kw, "").strip()
         intent["search_query"] = query.strip() or "búsqueda general"
+    
     return intent

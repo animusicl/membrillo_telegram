@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""membrillo-telegram - Bot principal con conversación fluida."""
+"""membrillo-telegram - Bot principal con /remember y conversación fluida."""
 
 import logging
 import os
@@ -36,16 +36,135 @@ logging.basicConfig(
 logger = logging.getLogger("membrillo-telegram")
 
 
-# ─── Saludos variados ───
-VARIED_SALUTATIONS = [
-    "👋 ¡Hola! ¿Cómo vas?",
-    "👋 Hey! Make time to chat, how are you?",
-    "👋 ¡Qué tal! Hace rato no nos vemos por acá",
-    "👋 Holaa! Extrañaba esta charla contigo",
-    "👋 ¡Holaa! ¿Qué novedad?",
-    "👋 Hello there! How's your day going?",
-    "👋 ¡Oye! ¿Qué tal te va?",
-]
+# ─── Comandos /remember ───
+
+async def remember_cmd(update: Update, context) -> None:
+    """Handler /remember - Guardar o consultar información."""
+    args = context.args
+    
+    if not args:
+        await update.message.reply_text(
+            "❓ Uso del comando `/remember`:\n\n"
+            "`/remember guardar <texto>` → Guarda ese texto en tu memoria\n"
+            "   Ej: `/remember guardar mi novio se llama Habib`\n\n"
+            "`/remember pregunta <texto>` → Bot busca en tu memoria\n"
+            "   Ej: `/remember pregunta mi novio`\n\n"
+            "`/remember listar` → Muestra todo lo guardado\n"
+            "`/remember borrar <clave>` → Borra una nota específica\n\n"
+            "💡 Los datos se guardan en tu sesión y persisten mientras el bot esté activo.",
+            parse_mode="Markdown"
+        )
+        return
+
+    comando = args[0].lower()
+    resto = " ".join(args[1:]) if len(args) > 1 else ""
+
+    if comando == "guardar":
+        if not resto:
+            await update.message.reply_text("❌ Escribe algo para guardar. Ej: `/remember guardar mi novio se llama Habib`", parse_mode="Markdown")
+            return
+        
+        # Determinar la clave automática o usar una sintética
+        # Patrones: "mi novio se llama Habib", "guardo que hoy llueve", etc.
+        msg_low = resto.lower()
+        
+        # Intentar extraer una clave significativa
+        note_key = "general"
+        note_content = resto
+        
+        # Si hay "en" o "de", intentar separar
+        if " en " in msg_low:
+            parts = msg_low.split(" en ", 1)
+            note_key = parts[0].replace("mi ", "").replace("el ", "").replace("mis ", "").strip()
+            note_content = parts[1].strip()
+        elif " de " in msg_low and len(parts) > 1 if " en " not in msg_low else False:
+            parts = msg_low.split(" de ", 1)
+            note_key = parts[0].strip()
+            note_content = parts[1].strip()
+        else:
+            # Usar tema principal: primeras 3 palabras significativas
+            palabras = [w for w in msg_low.split() if w not in ["que", "el", "un", "una", "sus", "sus"]]
+            note_key = " ".join(palabras[:3]) if palabras else "general"
+            note_content = resto
+        
+        # Guardar en memoria
+        ok = memory.add_note(note_key, note_content, user=update.from_user.full_name if update.from_user else "unknown")
+        if ok:
+            await update.message.reply_text(
+                f"✅ **Guardado.**\n"
+                f"🔑 Clave: **{note_key}**\n"
+                f"📝 Contenido: *{note_content[:80]}{'...' if len(note_content) > 80 else ''}*",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text("❌ Error al guardar. Intenta de nuevo.")
+
+    elif comando == "pregunta":
+        if not resto:
+            await update.message.reply_text("❌ Escribe qué quieres preguntar. Ej: `/remember pregunta mi novio`", parse_mode="Markdown")
+            return
+        
+        # Parsear qué se quiere preguntar
+        msg_low = resto.lower()
+        
+        # Extraer la clave de consulta
+        note_key = None
+        for pattern in [r"recordarme.*(\w+)", r"sobre\s+(\w+)", r"de\s+(\w+)"]:
+            match = re.search(pattern, msg_low)
+            if match:
+                note_key = match.group(1).strip()
+                break
+        
+        if not note_key:
+            note_key = "general"
+        
+        # Obtener la nota
+        note = memory.get_note(note_key)
+        if note:
+            # Usar el contenido más reciente
+            latest = note[-1]
+            await update.message.reply_text(
+                f"💬 **Sobre '{note_key}':** {latest['content']}",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                f"ℹ️ No tengo nada guardado bajo la clave **{note_key}**. "
+                f"Usa `/remember guardar <texto>` para guardar algo primero.",
+                parse_mode="Markdown"
+            )
+
+    elif comando == "listar":
+        note_keys = memory.list_notes()
+        if not note_keys:
+            await update.message.reply_text("📭 No tienes notas guardadas aún.\nUsa `/remember guardar <texto>` para comenzar a guardar cosas.")
+            return
+        
+        lines = ["📋 **Tus notas guardadas:**"]
+        for key in note_keys:
+            note = memory.get_note(key)
+            if note:
+                latest = note[-1]
+                lines.append(f"• **{key}**: {latest['content'][:100]}{'...' if len(latest['content']) > 100 else ''}")
+        
+        await update.message.reply_text("\n".join(lines))
+
+    elif comando == "borrar":
+        if not resto:
+            await update.message.reply_text("❌ Escribe qué clave borrar. Ej: `/remember borrar parejia`", parse_mode="Markdown")
+            return
+        
+        ok = memory.delete_note(resto)
+        if ok:
+            await update.message.reply_text(f"🗑️ **Borrado.** La nota '{resto}' ha sido eliminada de tu memoria.")
+        else:
+            await update.message.reply_text(f"ℹ️ No tienes ninguna nota guardada bajo la clave **{resto}**.")
+
+    else:
+        await update.message.reply_text(
+            "❓ Comando no reconocido. Usa `/remember` sin argumentos para ver las opciones.",
+            parse_mode="Markdown"
+        )
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,7 +179,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• Recordar tus sentimientos, experiencias y notas\n"
         "• Buscar información en internet cuando pregunten\n"
         "• Consejos amigables sobre vida y relaciones\n\n"
-        "Escribe algo para comenzar o di `membri ayuda` para ver más opciones."
+        "Escribe algo para comenzar o dice `/remember` para ver mis capacidades de memoria.",
     )
 
 
@@ -69,15 +188,17 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "🤖 **Membrillo - Ayuda**\n\n"
         "Soy un agente conversacional que recuerda las cosas importantes.\n\n"
-        "**Basta con escribirme.** Empieza con cualquier cosa o usa @membrillo si prefieres mencionarme.\n\n"
-        "**Qué puedo hacer:**\n"
-        "- Decime cualquier cosa y la recuerdo después\n"
+        "**Basta con escribirme.** Empieza con cualquier cosa o usa `@membrillo` si prefieres mencionarme.\n\n"
+        "**Comandos principales:**\n"
+        "- Escribe cualquier cosa y puedo recordar contexto\n"
+        "- `/remember guardar <texto>` → guarda ese texto en tu memoria\n"
+        "- `/remember pregunta <texto>` → bot busca en tu memoria\n"
+        "- `/remember listar` → muestra todo lo guardado\n"
+        "- `/remember borrar <clave>` → borra una nota específica\n\n"
+        "**O simplemente charla:**\n"
         "- `membri agrega X a la lista de Y` → guarda en tus listas\n"
-        "- `membri recuerda que...` → guardo como nota libre\n"
-        "- `membri muéstrame mis listas` → ver todo guardado\n"
-        "- `membri resetear todo` → borra todo el historial\n"
-        "- `membri cómo voy hoy?` → reviso tu historia\n"
-        "- Charla sobre sentimientos, vida, recomendaciones → busco en internet\n\n"
+        "- `membri qué vino va con pescado` → busca en internet\n"
+        "- `membri cómo te va` → conversación fluida\n\n"
         "¡Empecemos! ¿Cómo te va?"
     )
 
@@ -253,6 +374,7 @@ def main() -> None:
     application.add_handler(CommandHandler("listas", list_cmd))
     application.add_handler(CommandHandler("reset_lista", reset_lista_cmd))
     application.add_handler(CommandHandler("historial", historial_cmd))
+    application.add_handler(CommandHandler("remember", remember_cmd))
 
     # Message handler - conversación fluida
     application.add_handler(
