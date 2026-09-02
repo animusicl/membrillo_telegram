@@ -30,7 +30,7 @@ memory = GlobalMemory()
 bot_client = None
 
 # ─── Configuración del bot ───
-# Nombres que el usuario puede usar para mencionar al bot
+# Nombres que el usuario puede usar para mencionar al bot (sin @)
 BOT_NAMES = ["membrillo", "membri"]
 
 # ─── Enable logging ───
@@ -62,7 +62,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handler /start - Saludo simple."""
     saludo = get_saludo()
     await update.message.reply_text(
-        f"{saludo}\n\nSoy Membrillo. Escribe algo para comenzar o dime tu nombre para el bot."
+        f"{saludo}\n\nSoy Membrillo. Escribe algo para comenzar."
     )
 
 
@@ -76,8 +76,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "- `/remember pregunta <texto>` → bot recuerda\n"
         "- `/remember listar` → muestra todo guardado\n"
         "- `/remember borrar <clave>` → borra una nota\n"
-        "- `membrillo` o `membri` → activa el bot por nombre\n"
-        "- `membri agrega X a la lista de Y` → guarda en lista\n\n"
+        "- Escribe `membrillo` o `membri` al inicio para activarme\n"
+        "- O simplemente charla sin mencionarme si ya hablamos antes\n\n"
         "¡Empecemos!"
     )
 
@@ -137,10 +137,10 @@ async def historial_cmd(update: Update, context) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
-# ─── Manejador principal: responder al nombre del bot ───
+# ─── Manejador principal ───
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler principal - Responde cuando se menciona al bot por nombre."""
+    """Handler principal - Conversación fluida con nombre opcional."""
     global bot_client
     message = update.message
     if not message or not message.text:
@@ -150,38 +150,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = message.from_user.id if message.from_user else "unknown"
     user_name = message.from_user.full_name if message.from_user else "unknown"
 
-    # Siempre guardar en historial
+    # Siempre guardar en historial (contexto conversacional)
     memory.add_history("user", user_text, user_name)
 
-    # Detectar si el bot es mencionado por nombre
-    # Revisar si el mensaje empieza con el nombre del bot (sin @)
+    # Detectar si el bot es mencionado por nombre (al inicio del mensaje)
+    # O si ya hay historial previo para conversación fluida
     bot_mentioned = False
     normalized = user_text
 
-    # Verificar si el mensaje empieza con uno de los nombres del bot (sin @)
+    # Verificar si el mensaje empieza con el nombre del bot (sin @)
     for bot_name in BOT_NAMES:
         if user_text.lower().startswith(bot_name):
             bot_mentioned = True
             # Normalizar: quitar el nombre y quedarse con lo que sigue
             normalized = user_text[len(bot_name):].strip()
             break
-    
-    # También verificar mención con @
-    mention = f"@{context.bot.username}" if context.bot else ""
-    if mention and mention in user_text:
-        bot_mentioned = True
-        normalized = user_text.replace(mention, "").strip()
 
-    # Si el bot no es mencionado, verificar si hay historial previo
-    # para permitir conversación fluida
-    history_len = len(memory.get_history(last_n=3)) if bot_mentioned else 0
+    # Si no empezó con el nombre, verificar si es por mención @
+    if not bot_mentioned:
+        mention = f"@{context.bot.username}" if context.bot else ""
+        if mention and mention in user_text:
+            bot_mentioned = True
+            normalized = user_text.replace(mention, "").strip()
+
+    # Si ni empezó con nombre ni hay mención, verificar historial previo
+    # Para permitir conversación fluida: si ya hay >3 mensajes, responder igualmente
+    history_len = len(memory.get_history(last_n=3))
     
-    # Determinar si responder
-    should_respond = bot_mentioned or (history_len >= 3 and random.random() < 0.3)
-    
+    # Lógica: responder si:
+    # 1. Mencionó el nombre del bot, O
+    # 2. Ya hay historial previo (>3 mensajes) con cierta probabilidad
+    should_respond = bot_mentioned or (history_len >= 5)
+
     if not should_respond:
-        # Si no es para el bot y no hay historial, ignorar silenciosamente
-        return
+        # Silencio activo: si es un mensaje muy corto y sin contexto, ignorar
+        if len(user_text) < 5:
+            return
+        # Para mensajes más largos, aún así responder para ser útil
+        # (esto fuerza al bot a participar en conversación normal)
 
     # Parsear intent con LLM
     intent = parse_intent(normalized, memory)
@@ -225,7 +231,7 @@ def main() -> None:
     application.add_handler(CommandHandler("reset_lista", reset_lista_cmd))
     application.add_handler(CommandHandler("historial", historial_cmd))
 
-    # Message handler - responder al nombre del bot o por contexto
+    # Message handler - conversación fluida con nombre opcional
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
